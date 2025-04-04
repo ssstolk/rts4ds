@@ -1,0 +1,5 @@
+// Maximum of 5 games allowed in the RTS4DS engine
+
+AMOUNT-OF-GAMES 1
+
+uw_demo1

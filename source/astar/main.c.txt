@@ -1,0 +1,340 @@
+
+#include <nds.h>
+#include <stdio.h>
+#include "astar.h"
+
+#define COLOR_BLACK   (RGB5(0,0,0)     |BIT (15))
+#define COLOR_GRAY    (RGB5(12,12,12)  |BIT (15))
+#define COLOR_RED     (RGB5(31,0,0)    |BIT (15))
+#define COLOR_BROWN   (RGB5(24,18,0)   |BIT (15))
+
+#define COLOR_BLUE    (RGB5(0,0,31)    |BIT (15))
+#define COLOR_GREEN   (RGB5(0,31,0)    |BIT (15))
+#define COLOR_YELLOW  (RGB5(31,31,0)   |BIT (15))
+#define COLOR_ORANGE  (RGB5(31,16,4)   |BIT (15))
+
+// for this demo:
+#define MAPWIDTH      64
+#define MAPHEIGHT     64
+
+#define MAXVCOUNT     260
+
+// this next line is taken from RTS4DS
+enum UnitType { UT_FOOT, UT_WHEELED, UT_TRACKED, UT_AERIAL, UT_CREATURE }; // note: UT_CREATURE completely unused
+
+char UT[4] = "FWTA";
+
+__attribute__((aligned(32))) char theMap[MAPSIZE];  // the map
+
+unsigned short int pathbuffer[PATHBUFFERLEN];
+
+extern openSetNode openSet[MAPSIZE];
+extern u8 nodeBitmap[MAPSIZE/4];
+
+
+struct Unit {
+  enum UnitType type;
+  enum Positioned heading;
+  unsigned short int position;
+  
+  unsigned short int pathbuffer_len;
+  unsigned short int pathbuffer[PATHBUFFERLEN];
+  unsigned short int pathbuffer_index;
+  
+  bool search_needed;
+  int search_delay;
+  
+};
+
+#define MAXUNITS 20
+
+struct Unit Units[MAXUNITS];
+
+unsigned int goal_node=(48*MAPWIDTH+48);
+
+int current_search_unit=-1;
+
+#define SEARCH_DELAY 0
+
+
+// ********************************************************************************************
+// the callback functions:
+
+unsigned int mapCanBeTraversed_callback(unsigned int node, unsigned int distance, void* curUnit, void* curUnitInfo) {
+  
+  // check if node is busy
+  struct Unit* cur = curUnit;
+  int i;
+  if (distance<=(DIAGONAL_REAL_DISTANCE*4))
+    for (i=0;i<MAXUNITS;i++)
+      if (Units[i].position==node)
+        return (0);
+
+  // map empty? // unit flying?
+  if ((theMap[node]==EMPTY) || (cur->type==UT_AERIAL))
+    return (1);
+  
+  // map is not empty, unit is not flying...
+  if (theMap[node]==BUILDING)
+    return (0);
+  
+  // map it's surely mountain
+  if (cur->type==UT_TRACKED)
+    return (0);
+  
+  // map it's mountain and unit is 'UT_FOOT' or 'UT_WHEELED'
+  return (1);
+}
+
+unsigned int canHitTarget_callback(unsigned int start, unsigned int goal, void* curUnit, void* curUnitInfo) {
+
+  // this is a stub function
+  return (1);
+}
+
+// ********************************************************************************************
+
+
+
+void init_Units (void) {
+  int i;
+  for (i=0;i<MAXUNITS;i++) {
+    Units[i].type=(i%2)==0?UT_WHEELED:UT_TRACKED;
+    Units[i].heading=rand()%8;
+    Units[i].position=rand()%(MAPWIDTH*MAPHEIGHT);
+    Units[i].pathbuffer_len=0;
+    Units[i].pathbuffer_index=0;
+    Units[i].search_needed=true;
+    Units[i].search_delay=0;
+  }
+}
+
+unsigned int getNewPos (int unit) {
+
+  int pos_x, pos_y, new_pos_x, new_pos_y;
+  
+  if (Units[unit].pathbuffer[Units[unit].pathbuffer_index]==Units[unit].position) {
+    Units[unit].pathbuffer_index++;
+    if (Units[unit].pathbuffer_index>=Units[unit].pathbuffer_len) {
+      Units[unit].search_needed=true;
+      Units[unit].search_delay=0;
+      return(Units[unit].position);
+    }
+  }
+  
+  pos_y=Units[unit].position/MAPWIDTH;
+  pos_x=Units[unit].position%MAPWIDTH;
+  new_pos_y=Units[unit].pathbuffer[Units[unit].pathbuffer_index]/MAPWIDTH;
+  new_pos_x=Units[unit].pathbuffer[Units[unit].pathbuffer_index]%MAPWIDTH;
+
+  if ((new_pos_y-pos_y)!=0)
+    new_pos_y=(new_pos_y-pos_y)/abs(new_pos_y-pos_y);
+  else
+    new_pos_y=0;
+  new_pos_y+=pos_y;
+
+  if ((new_pos_x-pos_x)!=0)
+    new_pos_x=(new_pos_x-pos_x)/abs(new_pos_x-pos_x);
+  else
+    new_pos_x=0;
+  new_pos_x+=pos_x;
+
+  return(new_pos_y*MAPWIDTH+new_pos_x);
+}
+
+void move_Units (void) {
+  static int i=0;
+  unsigned int new_position;
+  
+  if (Units[i].search_needed) {
+    if (Units[i].search_delay>0) {
+      Units[i].search_delay--;
+    } else {
+      if (current_search_unit<0) {
+        Astar_startSearch (Units[i].position, goal_node, Units[i].heading, MAXVCOUNT, false /* attack */, 0 /* attack dist */, &Units[i], NULL);
+        current_search_unit=i;
+      } else {
+        // Astar is busy so DO NOTHING!
+      }
+    }
+  } else {
+    new_position=getNewPos(i);
+    if (mapCanBeTraversed_callback(new_position,1,&Units[i],NULL))
+      Units[i].position=new_position;
+    else {
+      Units[i].search_needed=true;
+      Units[i].search_delay=SEARCH_DELAY;
+    }
+  }
+  
+  i=(i+1)%MAXUNITS;
+  
+  // complete any pending search
+  while (Astar_getStatus()==AS_INCOMPLETE)
+    Astar_continueSearch (MAXVCOUNT);
+  
+  // search completed/failed
+  if (current_search_unit>=0) {
+    if (Astar_getStatus()==AS_COMPLETE) {
+      Units[current_search_unit].pathbuffer_len=Astar_loadPath(Units[current_search_unit].pathbuffer);
+      // limit  Units[current_search_unit].pathbuffer_len
+      if (Units[current_search_unit].pathbuffer_len>PATHBUFFERLEN)
+        Units[current_search_unit].pathbuffer_len=PATHBUFFERLEN;
+      Units[current_search_unit].pathbuffer_index=0;
+      Units[current_search_unit].search_needed=false;
+      current_search_unit=-1;
+    } else {
+      // path searh failed
+      // check closer target and restart it or
+      // requeue -with delay- for later
+      if (Astar_closest()==Units[current_search_unit].position) {
+        Units[current_search_unit].search_needed=true;
+        Units[current_search_unit].search_delay=SEARCH_DELAY;
+        current_search_unit=-1;
+      } else {
+        Astar_startSearch (Units[current_search_unit].position, Astar_closest(), Units[current_search_unit].heading, MAXVCOUNT, false, 0 /* attack dist */, NULL, NULL);
+      }
+    }
+  }
+  
+  
+  
+}
+
+int main(void) {
+
+  unsigned int start=(16*MAPWIDTH+16);
+
+  // bool redraw=true;
+  // bool attack=false;
+  // int attack_dist=8;
+  int i,j;
+  // int beginning_sl,sl_taken=0;
+  // enum Positioned start_heading = UP;
+  // enum UnitType unit_type = UT_FOOT;
+
+  lcdMainOnBottom ();  // text on top, map on bottom
+
+  vramSetBankA (VRAM_A_MAIN_BG);
+  videoSetMode (MODE_3_2D | DISPLAY_BG3_ACTIVE);  // text,text,text,extended(Active)
+  BG3_CR = BG_BMP16_128x128 | BG_BMP_BASE(0);
+  
+  for (i=0;i<MAPSIZE;i++)
+    theMap[i]=EMPTY;
+
+  BG3_XDX = (1 << 8)/4;
+  BG3_XDY = 0;
+  BG3_YDX = 0;
+  BG3_YDY = (1 << 8)/3;
+  
+  consoleDemoInit();
+  // iprintf(" *** Sverx A* demo ***\n");
+  iprintf(" *** Sverx A* demo 2.00 ***\n");
+  iprintf(" Touch the screen                 to DRAW obstacles\n");
+  iprintf(" Hold LEFT and touch the screen   to draw MOUNTAINS\n");
+  iprintf(" Hold L|R and touch the screen    to DELETE obstacles\n");
+  //iprintf(" Hold UP and touch the screen     to set START point\n");
+  iprintf(" Hold DN and touch the screen     to set GOAL point\n");
+  //iprintf(" START changes init. heading\n");
+  //iprintf(" SELECT changes unit type\n");
+  //iprintf(" X switches MOVE/ATTACK mode                         now:\n");
+  //iprintf(" A/B to increase/decrease MAX     shooting distance, now:\n");
+  iprintf("\n");
+  //iprintf("   Blue:START - Red  :obstacles\n");
+  iprintf("   Blue:Units - Red  :obstacles\n");
+  iprintf("  Green:GOAL  - Brown:mountains\n");
+  //iprintf(" Yellow:path / closest spot\n");
+  //iprintf(" Orange:path turning points\n");
+  //iprintf("   Grey:candidates eval'd by A*\n");
+  
+  // iprintf("openSet RAM address=0x%x",(unsigned int)&openSet);
+  
+  Astar_callback(&mapCanBeTraversed_callback,
+                 &canHitTarget_callback);       // map the callback functions
+  Astar_config(MAPWIDTH, MAPHEIGHT);            // define the map as 64x64 tiles
+  
+  init_Units ();
+  
+  
+  while(1) {
+    swiWaitForVBlank();
+    scanKeys();
+    
+    move_Units ();
+
+    if ((keysHeld() & KEY_UP) && ((keysDown()|keysHeld()) & KEY_TOUCH)) {
+      touchPosition touch; touch=touchReadXY();
+      start=(touch.py/3)*MAPWIDTH + (touch.px/4);
+      // theMap[start]=EMPTY;
+      // redraw=true;
+    } else if ((keysHeld() & KEY_DOWN) && ((keysDown()|keysHeld()) & KEY_TOUCH)) {
+      touchPosition touch; touch=touchReadXY();
+      goal_node=(touch.py/3)*MAPWIDTH + (touch.px/4);
+      
+      
+      for (i=0;i<MAXUNITS;i++) {
+        Units[i].search_needed=true;
+        Units[i].search_delay=0;
+      }
+      
+      // theMap[goal]=EMPTY;
+      // redraw=true;
+    } else if ((keysHeld() & (KEY_R|KEY_L)) && ((keysDown()|keysHeld()) & KEY_TOUCH)) {
+      touchPosition touch; touch=touchReadXY();
+      theMap[(touch.py/3)*MAPWIDTH + (touch.px/4)]=EMPTY;
+      // redraw=true;
+    } else if ((keysHeld() & KEY_LEFT) && ((keysDown()|keysHeld()) & KEY_TOUCH)) {
+      touchPosition touch; touch=touchReadXY();
+      theMap[(touch.py/3)*MAPWIDTH + (touch.px/4)]=MOUNTAIN;
+      // redraw=true;
+    /*
+    } else if (keysDown() & KEY_X) {
+      attack=!attack;
+      redraw=true;
+    } else if (keysDown() & KEY_A) {
+      if (attack_dist<100)
+        attack_dist++;
+      redraw=true;
+    } else if (keysDown() & KEY_B) {
+      if (attack_dist>1)
+        attack_dist--;
+      redraw=true;
+    } else if (keysDown() & KEY_START) {
+      start_heading=(start_heading+1)%8;
+      redraw=true;
+    } else if (keysDown() & KEY_SELECT) {
+      unit_type=(unit_type+1)%4;
+      redraw=true;
+    */
+    } else if ((keysDown()|keysHeld()) & KEY_TOUCH) {
+      touchPosition touch; touch=touchReadXY();
+      theMap[(touch.py/3)*MAPWIDTH + (touch.px/4)]=BUILDING;
+      // redraw=true;
+    }
+
+    if (Astar_getStatus()!=AS_INCOMPLETE) {
+      for (j=0;j<MAPHEIGHT;j++) {
+        for (i=0;i<MAPWIDTH;i++) {
+          int color=COLOR_BLACK;
+          switch (theMap[j*MAPWIDTH+i]) {
+            case EMPTY:
+              break;
+            case BUILDING:
+              color=COLOR_RED;
+              break;
+            case MOUNTAIN:
+              color=COLOR_BROWN;
+              break;
+          }
+          BG_GFX[j*128+i]=color;
+        }
+      }
+    }
+    
+    for (i=0;i<MAXUNITS;i++)
+      BG_GFX[Units[i].position/MAPWIDTH*128+Units[i].position%MAPWIDTH]=COLOR_BLUE;
+
+    BG_GFX[(goal_node/MAPWIDTH)*128+(goal_node%MAPWIDTH)]=COLOR_GREEN;
+
+  }
+}
