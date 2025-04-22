@@ -629,6 +629,13 @@ void inputHotKeys() {
     enum UnitType unitType = 255;
     int setViewToSelectedUnits = -1;
     
+	#ifndef DEBUG_BUILD
+    if (getKeysDown() & KEY_SELECT) {
+        doUnitsSelectAll(); // select all FRIENDLY units, other than those that collect ore
+        playSoundeffect(SE_BUTTONCLICK);
+        return;
+    }
+    #endif
     
     for (i=0; i<20; i++) {
         actualKey = BIT(i);
@@ -656,15 +663,7 @@ void inputHotKeys() {
         addHotKey(actualKey) ? playSoundeffect(SE_BUTTONCLICK) : playSoundeffect(SE_CANNOT);
     }
     */
-    
-    #ifndef DEBUG_BUILD
-    if (getKeysDown() & KEY_SELECT) {
-        doUnitsSelectAll(); // select all FRIENDLY units, other than those that collect ore
-        playSoundeffect(SE_BUTTONCLICK);
-        return;
-    }
-    #endif
-    
+        
     // key long enough held? it has already been save time. return.
     if (getKeysHeldTimeMax(actualKey) > TRIGGER_HOTKEY_SAVE_MIN_INTERVAL)
         return;
