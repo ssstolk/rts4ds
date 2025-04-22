@@ -35,7 +35,7 @@ The current version of RTS4DS has been compiled with [devkitPro](https://github.
 ### Libraries
 
 RTS4DS uses a number of libraries, most of which are maintained by [devkitPro](https://github.com/devkitPro/):
-* [`libnds`](https://github.com/devkitPro/libnds) - for addressing the hardware of the Nintendo DS handheld
+* [`libnds`](https://github.com/devkitPro/libnds) - for addressing the hardware of the Nintendo DS handheld (v1.7.1)
 * [`libfilesystem`](https://github.com/devkitPro/libfilesystem) - for supporting the NitroFS filesystem, typically appended to NDS executables
 * [`libfat`](https://github.com/devkitPro/libfat) - for supporting filesystems available on the Nintendo DS flashcarts
 * [`maxmod`](https://github.com/devkitPro/maxmod) - for playing mod files, in order to support music
