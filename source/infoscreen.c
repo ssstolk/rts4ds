@@ -82,6 +82,7 @@ static int base_unit_icons;
 static int base_sidebars_animation;
 static int base_place_icon;
 static int base_size_icons;
+static int base_size_icon[4*3];
 static int base_queue_words;
 static int base_queue_building;
 static int base_minplus;
@@ -1651,7 +1652,8 @@ void drawInfoScreen() {
                 /* display "size" */
                 setSpriteInfoScreen(32, ATTR0_SQUARE,
                                     48, SPRITE_SIZE_32, 0, 0,
-                                    0, 0, base_size_icons + (3*(structureInfo[infoScreenBuildInfoNr].width-1)+(structureInfo[infoScreenBuildInfoNr].height-1))*4);
+                                    0, 0, base_size_icon[(structureInfo[infoScreenBuildInfoNr].height-1)*4+(structureInfo[infoScreenBuildInfoNr].width-1)]);
+                                    // used to be: base_size_icons + (3*(structureInfo[infoScreenBuildInfoNr].width-1)+(structureInfo[infoScreenBuildInfoNr].height-1))*4);
                 
                 if (!infoScreenBuildInfoCanBuild)
                     break;
@@ -2011,8 +2013,9 @@ void loadInfoScreenGraphics() {
     }
     
     base_size_icons = offset/(16*16);
-    for (i=1; i<=4; i++) {
-        for (j=1; j<=3; j++) {
+    for (i=1; i<=4; i++) { // 4 being max width of a structure
+        for (j=1; j<=3; j++) { // 3 being max height of a structure
+			base_size_icon[(j-1)*4+(i-1)] = offset/(16*16);
             sprintf(filename, "Size%ix%i", i, j);
             offset += copyFileVRAM(SPRITE_GFX_SUB + (offset>>1), filename, FS_ICONS_GRAPHICS);
             for (k=0; k<(256>>1); k++) // set the remaining bytes of a 32x32 sprites to be transparent
