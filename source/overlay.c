@@ -22,11 +22,20 @@ static int base_overlay[NUMBER_OF_OVERLAY_TYPES];
 
 
 
-void addStructureDestroyedOverlay(int x, int y, int width, int height) { // keep in mind that the Destroyed gfx is 4x3
+void addStructureDestroyedOverlay(int x, int y, int width, int height) { // the Destroyed gfx can be 4x3 or smaller
     int i, j;
     int curOverlayNr;
     struct EnvironmentLayout *envLayout = environment.layout;
-    int base = MAX_OVERLAY_ON_MAP + MAX_PERMANENT_OVERLAY_TYPES + (rand() % ((3+1) - height)) * 4 + (rand() % ((4+1) - width));
+    int base = MAX_OVERLAY_ON_MAP + MAX_PERMANENT_OVERLAY_TYPES;
+    
+    // calculate how many 16x16 tiles are available for destroyed graphics
+    int tilesDestroyedGraphics = (base_overlay[OT_DESTROYED+1] - base_overlay[OT_DESTROYED]) / 4;
+    
+    if (tilesDestroyedGraphics >= 12) {
+		// we can assume 4x3 (or even greater height)
+		// so we will randomly grab a section out of these graphics, so there is a bit of variation in destruction
+		base += (rand() % ((3+1) - height)) * 4 + (rand() % ((4+1) - width));
+	}
     
     for (i=0; i<height; i++) {
         for (j=0; j<width; j++) {
@@ -37,7 +46,9 @@ void addStructureDestroyedOverlay(int x, int y, int width, int height) { // keep
                 else if (curOverlayNr - MAX_OVERLAY_ON_MAP < MAX_PERMANENT_OVERLAY_TYPES)
                     continue;
             }
-            envLayout[TILE_FROM_XY(x+j, y+i)].contains_overlay = base + 4*i + j;
+            envLayout[TILE_FROM_XY(x+j, y+i)].contains_overlay = 
+                (tilesDestroyedGraphics >= 12) ?
+                (base + 4*i + j) : (base + ((i+j) % tilesDestroyedGraphics));
         }
     }
 }
